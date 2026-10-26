@@ -247,6 +247,10 @@
   }
 
   const displayName = section => section.name?.trim() || defaultName(section.sites[0] ?? "");
+  // What a section's header, tabs and folded state are known by: the name for
+  // site sections (as before), the id for custom groups, which can be renamed
+  // and may share a name with a site section.
+  const headerKey = section => (section.kind === "custom" ? `custom:${section.id}` : displayName(section));
 
   function getSections() {
     const raw = readJSON(PREF_SECTIONS, null);
@@ -701,10 +705,10 @@
     return n;
   }
 
-  function makeHeader(label) {
+  function makeHeader(key) {
     const header = document.createXULElement("hbox");
     header.className = "zsg-header";
-    header.setAttribute("data-label", label);
+    header.setAttribute("data-key", key);
     header.setAttribute("context", "zsg-header-menu");
     const chevron = document.createXULElement("image");
     chevron.className = "zsg-chevron";
@@ -731,7 +735,7 @@
       if (e.target.classList.contains("zsg-clear")) {
         header.getAttribute("zsg-button") === "unload" ? unloadGroup(header) : closeGroup(header);
       } else {
-        toggleCollapsed(header.getAttribute("data-label"));
+        toggleCollapsed(header.getAttribute("data-key"));
       }
     });
     return header;
@@ -786,9 +790,10 @@
 
   function updateHeader(header, section, tabs, opts, look) {
     const label = displayName(section);
+    header.setAttribute("data-label", label);
     header.querySelector(".zsg-label").setAttribute("value", label);
     header.querySelector(".zsg-count").setAttribute("value", String(tabs.length));
-    header.toggleAttribute("zsg-closed", tabs.length > 0 && opts.collapsed.has(label));
+    header.toggleAttribute("zsg-closed", tabs.length > 0 && opts.collapsed.has(headerKey(section)));
     header.toggleAttribute("zsg-empty", !tabs.length);
     header.toggleAttribute("zsg-chevron-right", opts.chevron === "right");
     header.toggleAttribute("zsg-chevron-hidden", opts.chevron === "hidden");
@@ -853,9 +858,9 @@
       return looks.get(si);
     };
     grouped.forEach(({ tab, si }, i) => {
-      const label = displayName(sections[si]);
-      tab.setAttribute("zsg-group", label);
-      tab.toggleAttribute("zsg-collapsed", opts.collapsed.has(label));
+      const key = headerKey(sections[si]);
+      tab.setAttribute("zsg-group", key);
+      tab.toggleAttribute("zsg-collapsed", opts.collapsed.has(key));
       tab.toggleAttribute("zsg-first", grouped[i - 1]?.si !== si);
       tab.toggleAttribute("zsg-last", grouped[i + 1]?.si !== si);
       const look = lookFor(si);
@@ -885,7 +890,7 @@
     const existing = new Map();
     for (const el of container.children) {
       if (el.classList.contains("zsg-header")) {
-        existing.set(el.getAttribute("data-label"), el);
+        existing.set(el.getAttribute("data-key"), el);
       }
     }
     const keep = new Set();
@@ -895,11 +900,11 @@
       if ((!tabs.length && !opts.keepEmpty) || !inSpace(section, spaceId)) {
         return;
       }
-      const label = displayName(section);
-      if (keep.has(existing.get(label))) {
+      const key = headerKey(section);
+      if (keep.has(existing.get(key))) {
         return; // two sections with the same name: the first one wins
       }
-      const header = existing.get(label) ?? makeHeader(label);
+      const header = existing.get(key) ?? makeHeader(key);
       updateHeader(header, section, tabs, opts, lookFor(si));
 
       if (tabs.length) {
@@ -1033,16 +1038,16 @@
 
   /* ---------- actions ---------- */
 
-  function toggleCollapsed(label) {
+  function toggleCollapsed(key) {
     const set = getCollapsed();
-    set.has(label) ? set.delete(label) : set.add(label);
+    set.has(key) ? set.delete(key) : set.add(key);
     setCollapsed(set); // pref observer re-runs layout
   }
 
   function groupTabs(header) {
-    const label = header.getAttribute("data-label");
+    const key = header.getAttribute("data-key");
     return [...header.parentElement.children].filter(
-      el => el.localName === "tab" && el.getAttribute("zsg-group") === label
+      el => el.localName === "tab" && el.getAttribute("zsg-group") === key
     );
   }
 
