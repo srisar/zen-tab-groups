@@ -50,6 +50,24 @@
   // box can offer it as a list).
   const PREF_MIN_TABS = "zen.sitegroups.min-tabs";
   const MAX_MIN_TABS = 10;
+  // Groups you make and fill by hand, in the normal tab list above the site
+  // sections: [{ id, name, color, space }]. Kept apart from the sections,
+  // which the settings page rewrites (and would drop these from).
+  const PREF_CUSTOM = "zen.sitegroups.custom-groups";
+  // A tab's custom group id, kept with the session so it survives restarts.
+  const TAB_GROUP_KEY = "zsg-custom-group";
+  // New custom groups take these colors in turn.
+  const GROUP_COLORS = [
+    ["Blue", "#4da3ff"],
+    ["Purple", "#a77bf3"],
+    ["Cyan", "#3fc1d0"],
+    ["Green", "#5bc06a"],
+    ["Yellow", "#e6b929"],
+    ["Orange", "#f08a3c"],
+    ["Red", "#ec5b5b"],
+    ["Pink", "#ea6fb4"],
+    ["Grey", "#9a9aa2"],
+  ];
 
   // A section is either one website ("site") or several under a name you
   // pick ("collection"). A website can only belong to one section. `spaces`
@@ -247,6 +265,10 @@
   }
 
   const displayName = section => section.name?.trim() || defaultName(section.sites[0] ?? "");
+  // What a section's header, tabs and folded state are known by: the name for
+  // site sections (as before), the id for custom groups, which can be renamed
+  // and may share a name with a site section.
+  const headerKey = section => (section.kind === "custom" ? `custom:${section.id}` : displayName(section));
 
   function getSections() {
     const raw = readJSON(PREF_SECTIONS, null);
@@ -288,6 +310,79 @@
 
   const getCollapsed = () => new Set(readJSON(PREF_COLLAPSED, []));
   const setCollapsed = set => writeJSON(PREF_COLLAPSED, [...set]);
+
+  /* ---------- custom groups ---------- */
+
+  function getCustomGroups() {
+    const raw = readJSON(PREF_CUSTOM, []);
+    return (Array.isArray(raw) ? raw : [])
+      .filter(g => g && typeof g.id === "string" && g.id && String(g.name ?? "").trim())
+      .map(g => ({
+        id: g.id,
+        name: String(g.name).trim(),
+        color: /^#[0-9a-f]{6}$/i.test(g.color ?? "") ? g.color : null,
+        space: SPACE_ID.test(g.space ?? "") ? g.space : null,
+      }));
+  }
+  const setCustomGroups = groups => writeJSON(PREF_CUSTOM, groups);
+
+  // A custom group in the shape of a section, so layout, colors, headers and
+  // spaces treat both alike. A group with a space that's gone shows in all.
+  const asSection = group => ({
+    kind: "custom",
+    id: group.id,
+    name: group.name,
+    color: group.color,
+    sites: [],
+    spaces: group.space ? [group.space] : [],
+    minTabs: 1,
+  });
+  const groupsIn = (groups, space) => groups.filter(g => inSpace(asSection(g), space));
+
+  const tabGroupId = tab => SessionStore.getCustomTabValue(tab, TAB_GROUP_KEY);
+  function setTabGroup(tab, id) {
+    SessionStore.setCustomTabValue(tab, TAB_GROUP_KEY, id);
+    schedule();
+  }
+  function clearTabGroup(tab) {
+    SessionStore.deleteCustomTabValue(tab, TAB_GROUP_KEY);
+    schedule();
+  }
+  // Whether a tab is in a custom group of its space (never with the mod
+  // switched off).
+  function inCustomGroup(tab) {
+    const id = modEnabled && tabGroupId(tab);
+    return !!id && groupsIn(getCustomGroups(), tab.getAttribute("zen-workspace-id")).some(g => g.id === id);
+  }
+
+  const nameTaken = (name, space, exceptId = null) =>
+    groupsIn(getCustomGroups(), space).some(g => g.id !== exceptId && g.name.toLowerCase() === name.toLowerCase());
+
+  // Asks for a group name until it's free in the space; null if cancelled.
+  function askGroupName(title, message, initial, space, exceptId = null) {
+    for (;;) {
+      const name = promptText(title, message, initial);
+      if (!name || !nameTaken(name, space, exceptId)) {
+        return name || null;
+      }
+      message = `“${name}” is already a group in this space. Pick another name:`;
+      initial = name;
+    }
+  }
+
+  // Makes a group in the space, named by the user. Returns its id, or null.
+  function newGroup(space) {
+    const name = askGroupName("New group", "Name for the new group:", "", space);
+    if (!name) {
+      return null;
+    }
+    const groups = getCustomGroups();
+    const id = Services.uuid.generateUUID().toString();
+    const color = GROUP_COLORS[groups.length % GROUP_COLORS.length][1];
+    groups.push({ id, name, color, space: SPACE_ID.test(space ?? "") ? space : null });
+    setCustomGroups(groups);
+    return id;
+  }
 
   // Earlier versions kept groups in numbered slots (zen.sitegroups.<n>.name/sites).
   function migrateOldPrefs() {
@@ -701,10 +796,10 @@
     return n;
   }
 
-  function makeHeader(label) {
+  function makeHeader(key) {
     const header = document.createXULElement("hbox");
     header.className = "zsg-header";
-    header.setAttribute("data-label", label);
+    header.setAttribute("data-key", key);
     header.setAttribute("context", "zsg-header-menu");
     const chevron = document.createXULElement("image");
     chevron.className = "zsg-chevron";
@@ -731,7 +826,7 @@
       if (e.target.classList.contains("zsg-clear")) {
         header.getAttribute("zsg-button") === "unload" ? unloadGroup(header) : closeGroup(header);
       } else {
-        toggleCollapsed(header.getAttribute("data-label"));
+        toggleCollapsed(header.getAttribute("data-key"));
       }
     });
     return header;
@@ -786,9 +881,10 @@
 
   function updateHeader(header, section, tabs, opts, look) {
     const label = displayName(section);
+    header.setAttribute("data-label", label);
     header.querySelector(".zsg-label").setAttribute("value", label);
     header.querySelector(".zsg-count").setAttribute("value", String(tabs.length));
-    header.toggleAttribute("zsg-closed", tabs.length > 0 && opts.collapsed.has(label));
+    header.toggleAttribute("zsg-closed", tabs.length > 0 && opts.collapsed.has(headerKey(section)));
     header.toggleAttribute("zsg-empty", !tabs.length);
     header.toggleAttribute("zsg-chevron-right", opts.chevron === "right");
     header.toggleAttribute("zsg-chevron-hidden", opts.chevron === "hidden");
@@ -813,15 +909,32 @@
   }
 
   // Lays out one space's tabs. Returns the tabs it put in a section.
-  function layoutSection(container, sections, opts) {
+  // `groups`: the custom groups, or null to leave tabs' groups alone (mod off).
+  function layoutSection(container, siteSections, groups, opts) {
     const spaceId = container.getAttribute("zen-workspace-id");
     const content = [...container.children].filter(isContent);
+    // This space's custom groups come first, above the site sections.
+    const custom = groupsIn(groups ?? [], spaceId);
+    const sections = [...custom.map(asSection), ...siteSections];
     let grouped = [];
     for (const el of content) {
       if (el.localName !== "tab") {
         continue;
       }
-      const si = sectionIndexForHost(tabHost(el), sections, spaceId);
+      // A tab in a custom group stays there, whatever its site.
+      const id = groups ? tabGroupId(el) : "";
+      let si = id ? custom.findIndex(g => g.id === id) : -1;
+      // Its group was deleted: it leaves it for good. (Not relaid out: this
+      // layout already sorts it.) A group of another space only isn't laid
+      // out here: tabs can pass through other lists while Zen starts up, so
+      // that's no reason to forget their group.
+      if (id && si < 0 && !groups.some(g => g.id === id)) {
+        SessionStore.deleteCustomTabValue(el, TAB_GROUP_KEY);
+      }
+      if (si < 0) {
+        const i = sectionIndexForHost(tabHost(el), siteSections, spaceId);
+        si = i < 0 ? -1 : custom.length + i;
+      }
       if (si >= 0) {
         grouped.push({ tab: el, si });
       } else {
@@ -853,9 +966,9 @@
       return looks.get(si);
     };
     grouped.forEach(({ tab, si }, i) => {
-      const label = displayName(sections[si]);
-      tab.setAttribute("zsg-group", label);
-      tab.toggleAttribute("zsg-collapsed", opts.collapsed.has(label));
+      const key = headerKey(sections[si]);
+      tab.setAttribute("zsg-group", key);
+      tab.toggleAttribute("zsg-collapsed", opts.collapsed.has(key));
       tab.toggleAttribute("zsg-first", grouped[i - 1]?.si !== si);
       tab.toggleAttribute("zsg-last", grouped[i + 1]?.si !== si);
       const look = lookFor(si);
@@ -885,21 +998,22 @@
     const existing = new Map();
     for (const el of container.children) {
       if (el.classList.contains("zsg-header")) {
-        existing.set(el.getAttribute("data-label"), el);
+        existing.set(el.getAttribute("data-key"), el);
       }
     }
     const keep = new Set();
     let last = null; // last element of the sections area so far
     sections.forEach((section, si) => {
       const tabs = grouped.filter(g => g.si === si).map(g => g.tab);
-      if ((!tabs.length && !opts.keepEmpty) || !inSpace(section, spaceId)) {
+      // A custom group keeps its header while empty: it lasts until deleted.
+      if ((!tabs.length && !opts.keepEmpty && section.kind !== "custom") || !inSpace(section, spaceId)) {
         return;
       }
-      const label = displayName(section);
-      if (keep.has(existing.get(label))) {
+      const key = headerKey(section);
+      if (keep.has(existing.get(key))) {
         return; // two sections with the same name: the first one wins
       }
-      const header = existing.get(label) ?? makeHeader(label);
+      const header = existing.get(key) ?? makeHeader(key);
       updateHeader(header, section, tabs, opts, lookFor(si));
 
       if (tabs.length) {
@@ -992,6 +1106,7 @@
     try {
       // Switched off in Settings: an empty list strips everything back out.
       const sections = modEnabled ? getSections() : [];
+      const groups = modEnabled ? getCustomGroups() : null;
       const opts = {
         collapsed: getCollapsed(),
         keepEmpty: Services.prefs.getBoolPref(PREF_KEEP_EMPTY, false),
@@ -1017,7 +1132,7 @@
       knownSpaces = new Set(getSpaces().map(s => s.id));
       const grouped = new Set();
       for (const container of document.querySelectorAll(".zen-workspace-normal-tabs-section")) {
-        layoutSection(container, sections, opts).forEach(tab => grouped.add(tab));
+        layoutSection(container, sections, groups, opts).forEach(tab => grouped.add(tab));
       }
       // Tabs that left a space's list (pinned, put in a folder or a split
       // view) keep nothing of their section, so a folded one isn't hidden.
@@ -1033,16 +1148,16 @@
 
   /* ---------- actions ---------- */
 
-  function toggleCollapsed(label) {
+  function toggleCollapsed(key) {
     const set = getCollapsed();
-    set.has(label) ? set.delete(label) : set.add(label);
+    set.has(key) ? set.delete(key) : set.add(key);
     setCollapsed(set); // pref observer re-runs layout
   }
 
   function groupTabs(header) {
-    const label = header.getAttribute("data-label");
+    const key = header.getAttribute("data-key");
     return [...header.parentElement.children].filter(
-      el => el.localName === "tab" && el.getAttribute("zsg-group") === label
+      el => el.localName === "tab" && el.getAttribute("zsg-group") === key
     );
   }
 
@@ -1148,28 +1263,73 @@
     const collectionPopup = document.createXULElement("menupopup");
     collectionMenu.append(collectionPopup);
     const removeItem = menuItem("Remove this site from its section", () => contextHost && removeSite(contextHost));
+    // Custom groups: put the tab (or all selected tabs) in one, or take it out.
+    // The tabs are noted when the menu opens; the name prompt outlasts it.
+    let menuTabs = [];
+    let currentGroup = null;
+    const groupMenu = document.createXULElement("menu");
+    groupMenu.setAttribute("label", "Add to group");
+    const groupPopup = document.createXULElement("menupopup");
+    groupMenu.append(groupPopup);
+    const leaveItem = menuItem("Remove from its group", () => {
+      menuTabs.filter(t => tabGroupId(t) === currentGroup?.id).forEach(clearTabGroup);
+    });
     const settingsItem = menuItem("Tab Groups settings…", openSettings);
-    const all = [sep, ownItem, collectionMenu, removeItem, settingsItem];
+    const siteItems = [ownItem, collectionMenu, removeItem, settingsItem];
     // Ids let other mods (Zen Context Menu) recognize the items, whose labels
     // change with the tab's site.
     sep.id = "context_zsg-separator";
     ownItem.id = "context_zsg-own-section";
     collectionMenu.id = "context_zsg-add-to-collection";
     removeItem.id = "context_zsg-remove-site";
+    groupMenu.id = "context_zsg-add-to-group";
+    leaveItem.id = "context_zsg-remove-from-group";
     settingsItem.id = "context_zsg-settings";
-    tabMenu.append(...all);
+    tabMenu.append(sep, ownItem, collectionMenu, removeItem, groupMenu, leaveItem, settingsItem);
+
+    // The groups the tab can go in (all but its own), then "New group…".
+    function fillGroupItems(tab) {
+      groupMenu.hidden = leaveItem.hidden = !tab;
+      if (!tab) {
+        return;
+      }
+      const tabs = (tab.multiselected ? gBrowser.selectedTabs : [tab]).filter(t => !t.pinned);
+      const space = tab.getAttribute("zen-workspace-id") || null;
+      const groups = getCustomGroups();
+      menuTabs = tabs;
+      currentGroup = groupsIn(groups, space).find(g => g.id === tabGroupId(tab)) ?? null;
+      leaveItem.hidden = !currentGroup;
+      if (currentGroup) {
+        leaveItem.setAttribute("label", `Remove from “${currentGroup.name}”`);
+      }
+      const others = groupsIn(groups, space).filter(g => g !== currentGroup);
+      groupPopup.replaceChildren(
+        ...others.map(g => menuItem(g.name, () => tabs.forEach(t => setTabGroup(t, g.id)))),
+        ...(others.length ? [document.createXULElement("menuseparator")] : []),
+        menuItem("New group…", () => {
+          const id = newGroup(space);
+          if (id) {
+            tabs.forEach(t => setTabGroup(t, id));
+          }
+        })
+      );
+    }
 
     tabMenu.addEventListener("popupshowing", e => {
       if (e.target !== tabMenu) {
         return;
       }
       const tab = TabContextMenu.contextTab;
-      // Switched off in the options: none of the items, settings included
-      // (the header menu and Sine's gear button still open it).
+      const usable = tab && !tab.pinned && modEnabled;
+      // Custom groups are always offered: the menu is the only way in.
+      fillGroupItems(usable ? tab : null);
+      // Switched off in the options: none of the site items, settings
+      // included (the header menu and Sine's gear button still open it).
       const showItems = Services.prefs.getBoolPref(PREF_TAB_MENU, true);
-      const host = tab && !tab.pinned && modEnabled && showItems ? tabHost(tab) : null;
+      const host = usable && showItems ? tabHost(tab) : null;
       contextHost = host;
-      all.forEach(el => (el.hidden = !host));
+      siteItems.forEach(el => (el.hidden = !host));
+      sep.hidden = !host && groupMenu.hidden;
       if (!host) {
         return;
       }
@@ -1179,7 +1339,9 @@
       ownItem.hidden = collectionMenu.hidden = si >= 0;
       removeItem.hidden = si < 0;
       if (si >= 0) {
-        removeItem.setAttribute("label", `Remove from “${displayName(sections[si])}”`);
+        // Next to "Remove from “olai”", say it's the site that goes.
+        const name = displayName(sections[si]);
+        removeItem.setAttribute("label", currentGroup ? `Remove ${site} from “${name}”` : `Remove from “${name}”`);
         return;
       }
       ownItem.setAttribute("label", `Give ${site} its own section`);
@@ -1217,8 +1379,74 @@
         setSections(sections);
       }
     };
+    // The custom group a header belongs to (by id), or null for a section.
+    const customIdOf = header => {
+      const key = header?.getAttribute("data-key") ?? "";
+      return key.startsWith("custom:") ? key.slice("custom:".length) : null;
+    };
+    const editGroup = fn => () => {
+      const id = customIdOf(triggerHeader());
+      const groups = getCustomGroups();
+      const i = groups.findIndex(g => g.id === id);
+      if (i >= 0 && fn(groups, i) !== false) {
+        setCustomGroups(groups);
+      }
+    };
+    // One menu item for both kinds of header.
+    const either = (forSection, forGroup) => () => (customIdOf(triggerHeader()) ? forGroup : forSection)();
     // The space whose list the header is in.
     const headerSpace = () => triggerHeader()?.parentElement?.getAttribute("zen-workspace-id") ?? null;
+    // Groups move past the groups shown in the same space (step: -1 or 1).
+    const moveGroup = step =>
+      editGroup((g, i) => {
+        const space = headerSpace();
+        let j = i + step;
+        while (g[j] && !inSpace(asSection(g[j]), space)) {
+          j += step;
+        }
+        if (!g[j]) {
+          return false;
+        }
+        [g[i], g[j]] = [g[j], g[i]];
+      });
+    const colorMenu = document.createXULElement("menu");
+    colorMenu.id = "zsg-header-color";
+    colorMenu.setAttribute("label", "Color");
+    const colorPopup = document.createXULElement("menupopup");
+    colorMenu.append(colorPopup);
+    for (const [name, hex] of GROUP_COLORS) {
+      const item = menuItem(
+        name,
+        editGroup((g, i) => {
+          g[i].color = hex;
+        })
+      );
+      item.setAttribute("type", "radio");
+      item.setAttribute("name", "zsg-group-color");
+      item.setAttribute("value", hex);
+      colorPopup.append(item);
+    }
+    // Lets go of the group's tabs (they're sorted as usual again); none close.
+    const deleteItem = menuItem("Delete group", () => {
+      const id = customIdOf(triggerHeader());
+      if (!id) {
+        return;
+      }
+      setCustomGroups(getCustomGroups().filter(g => g.id !== id));
+      const set = getCollapsed();
+      if (set.delete(`custom:${id}`)) {
+        setCollapsed(set);
+      }
+      // Tabs in other windows let go on their next layout: their group is gone.
+      gBrowser.tabs.filter(t => tabGroupId(t) === id).forEach(clearTabGroup);
+    });
+    deleteItem.id = "zsg-header-delete";
+    const removeSectionItem = menuItem("Remove section", edit((s, i) => s.splice(i, 1)));
+    const moveUpItem = menuItem("Move section up", either(edit((s, i) => i > 0 && ([s[i - 1], s[i]] = [s[i], s[i - 1]])), moveGroup(-1)));
+    const moveDownItem = menuItem(
+      "Move section down",
+      either(edit((s, i) => i < s.length - 1 && ([s[i + 1], s[i]] = [s[i], s[i + 1]])), moveGroup(1))
+    );
     const spacesSep = document.createXULElement("menuseparator");
     const onlyHereItem = menuItem(
       "Only in this space",
@@ -1243,6 +1471,27 @@
       const header = triggerHeader();
       closeAllItem.disabled = !!header?.hasAttribute("zsg-empty");
       unloadAllItem.disabled = !!header?.hasAttribute("zsg-none-loaded");
+      const groupId = customIdOf(header);
+      const kind = groupId ? "group" : "section";
+      moveUpItem.setAttribute("label", `Move ${kind} up`);
+      moveDownItem.setAttribute("label", `Move ${kind} down`);
+      closeAllItem.setAttribute("label", `Close all tabs in this ${kind}`);
+      unloadAllItem.setAttribute("label", `Unload all tabs in this ${kind}`);
+      removeSectionItem.hidden = !!groupId;
+      colorMenu.hidden = deleteItem.hidden = !groupId;
+      if (groupId) {
+        // A group always belongs to its own space.
+        onlyHereItem.hidden = everywhereItem.hidden = spacesSep.hidden = true;
+        const color = getCustomGroups().find(g => g.id === groupId)?.color;
+        for (const item of colorPopup.children) {
+          if (item.getAttribute("value") === color) {
+            item.setAttribute("checked", "true");
+          } else {
+            item.removeAttribute("checked");
+          }
+        }
+        return;
+      }
       const section = getSections().find(s => displayName(s) === header?.getAttribute("data-label"));
       const space = headerSpace();
       // With one space (or spaces off) there's nothing to choose.
@@ -1252,26 +1501,38 @@
       spacesSep.hidden = onlyHereItem.hidden && everywhereItem.hidden;
     });
     popup.append(
-      menuItem("Move section up", edit((s, i) => i > 0 && ([s[i - 1], s[i]] = [s[i], s[i - 1]]))),
-      menuItem("Move section down", edit((s, i) => i < s.length - 1 && ([s[i + 1], s[i]] = [s[i], s[i + 1]]))),
+      moveUpItem,
+      moveDownItem,
       menuItem(
         "Rename…",
-        edit((s, i) => {
-          const old = displayName(s[i]);
-          const name = promptText("Rename section", "New name:", old);
-          if (!name) {
-            return false;
-          }
-          s[i].name = name;
-          const set = getCollapsed();
-          if (set.delete(old)) {
-            set.add(name);
-            setCollapsed(set);
-          }
-          return true;
-        })
+        either(
+          edit((s, i) => {
+            const old = displayName(s[i]);
+            const name = promptText("Rename section", "New name:", old);
+            if (!name) {
+              return false;
+            }
+            s[i].name = name;
+            const set = getCollapsed();
+            if (set.delete(old)) {
+              set.add(name);
+              setCollapsed(set);
+            }
+            return true;
+          }),
+          // Folded state is kept by id, so it survives a rename as is.
+          editGroup((g, i) => {
+            const name = askGroupName("Rename group", "New name:", g[i].name, headerSpace(), g[i].id);
+            if (!name) {
+              return false;
+            }
+            g[i].name = name;
+          })
+        )
       ),
-      menuItem("Remove section", edit((s, i) => s.splice(i, 1))),
+      colorMenu,
+      removeSectionItem,
+      deleteItem,
       spacesSep,
       onlyHereItem,
       everywhereItem,
@@ -1318,6 +1579,32 @@
     );
   }
 
+  // Zen's Clear (close unpinned tabs) keeps custom groups' tabs, like it keeps
+  // a folder's. It works out what to close itself, then closes it all with
+  // one gBrowser.removeTabs call before returning, so that call is filtered
+  // just while it runs. If Zen changes, Clear is left as Zen made it.
+  function hookZenClear() {
+    const original = window.gZenWorkspaces?.closeAllUnpinnedTabs;
+    if (typeof original !== "function") {
+      console.error("[Zen Tab Groups] couldn't hook Zen's Clear button");
+      return;
+    }
+    gZenWorkspaces.closeAllUnpinnedTabs = function (...args) {
+      const removeTabs = gBrowser.removeTabs;
+      gBrowser.removeTabs = (tabs, options) =>
+        removeTabs.call(
+          gBrowser,
+          tabs.filter(t => !inCustomGroup(t)),
+          options
+        );
+      try {
+        return original.apply(this, args);
+      } finally {
+        gBrowser.removeTabs = removeTabs;
+      }
+    };
+  }
+
   /* ---------- wiring ---------- */
 
   function init() {
@@ -1327,6 +1614,7 @@
       windowUtils.AUTHOR_SHEET
     );
     setupMenus();
+    hookZenClear();
 
     // Used by the settings page.
     window.ZenSiteGroups = { getSections, setSections, defaultSections, normalizeSite, defaultName, displayName, iconColor, getSpaces };
@@ -1337,6 +1625,20 @@
     }
 
     const tabContainer = gBrowser.tabContainer;
+    // A tab opened from a custom group's tab (a link, middle-click, "Open
+    // Link in New Tab") joins that group. Ctrl+T and + leave no opener, and
+    // Zen's glance previews are passing tabs, so they stay out.
+    tabContainer.addEventListener("TabOpen", e => {
+      const tab = e.target;
+      const opener = tab.openerTab;
+      if (!modEnabled || !opener || tab.pinned || tabGroupId(tab) || tab.hasAttribute("zen-glance-tab") || opener.hasAttribute("zen-glance-tab")) {
+        return;
+      }
+      const id = tabGroupId(opener);
+      if (id && getCustomGroups().some(g => g.id === id)) {
+        setTabGroup(tab, id);
+      }
+    });
     // TabBrowserDiscarded / TabBrowserInserted: a tab unloaded or loaded
     // again, for the Unload button.
     for (const type of ["TabOpen", "TabClose", "TabMove", "TabPinned", "TabUnpinned", "TabSelect", "TabGrouped", "TabUngrouped", "TabBrowserDiscarded", "TabBrowserInserted"]) {

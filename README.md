@@ -11,6 +11,7 @@ Keeps your busiest sites at the top of Zen's sidebar. Tabs from YouTube, Reddit 
 - **Sorted automatically.** New tabs go straight into their section, in the order you choose. No dragging.
 - **Colored headers.** Each header takes the main color of the site's logo, a color you pick, or one color for every section.
 - **Collections.** Put several sites under one name, like ChatGPT, Claude and Gemini as "AI".
+- **Custom groups.** Make your own group for a piece of work, like "olai", and put any tabs in it, from any site. They stay together until you delete the group, even after a restart.
 - **Fold away.** Hover a header to show the collapse arrow. Click it to hide the section's tabs, or click **Clear** to close them all (or **Unload** to free their memory).
 - **Your look.** Indent a section's tabs, draw a line along them, tint the header, the tabs or the whole section as one block (with a strength slider), hide the header line, arrow or tab count. Text stays readable on any color.
 - **Per space.** Keep a section to the spaces you choose, and group a site only once enough of its tabs are open.
@@ -54,6 +55,17 @@ Out of the box you get sections for **YouTube, Reddit, Wikipedia and X**.
 
 A website can only be in one section. The most specific address wins, so `music.youtube.com` can have its own section next to `youtube.com`.
 
+### Custom groups
+
+For tabs that belong together by what you're working on rather than by site, like everything for one project.
+
+- **Make one:** right-click a tab → **Add to group** → **New group…**, and name it. Select several tabs first (Ctrl-click or Shift-click) to put them all in at once.
+- **Add tabs:** right-click a tab → **Add to group** → pick the group. Links you open from a group's tabs join it on their own; a blank new tab doesn't.
+- **Take a tab out:** right-click it → **Remove from "olai"**. It goes back to its site's section, or to your other tabs.
+- **Right-click a group's header** to move it, rename it, change its color, or **Delete group**. Deleting a group closes none of its tabs: they're sorted as usual again.
+
+Custom groups sit above your site sections and win over them: a GitHub tab in "olai" stays in "olai". Each group belongs to the space you made it in. Zen's **Clear** button leaves their tabs open, like a folder's.
+
 ### Spaces
 
 A section is used in every space unless you pick some: with more than one space, each section on the settings page has a button listing the spaces it's used in, or right-click its header → **Only in this space**. In the other spaces its tabs aren't grouped.
@@ -82,7 +94,7 @@ Behavior:
 - **Group from:** how many of a section's tabs must be open in a space before they're grouped (1 by default, up to 10). With fewer, they stay where they are. Each section can set its own number on the settings page (**Group from** under its websites), say 3 for YouTube and the default for the rest.
 - **Header button:** what the button that appears when you hover a header does: **Clear** closes the section's tabs (default), **Unload** keeps them but unloads their pages, like a folder's button, or **None**.
 - **Always show headers:** keeps a section's header even when none of its tabs are open.
-- **Items in the tab menu:** on by default. Switch it off to keep Tab Groups' items out of the tab right-click menu; right-click a header to open the settings instead.
+- **Items in the tab menu:** on by default. Switch it off to keep Tab Groups' site items out of the tab right-click menu; right-click a header to open the settings instead. **Add to group** always shows.
 
 ### Backup
 
