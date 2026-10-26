@@ -1596,6 +1596,20 @@
     }
 
     const tabContainer = gBrowser.tabContainer;
+    // A tab opened from a custom group's tab (a link, middle-click, "Open
+    // Link in New Tab") joins that group. Ctrl+T and + leave no opener, and
+    // Zen's glance previews are passing tabs, so they stay out.
+    tabContainer.addEventListener("TabOpen", e => {
+      const tab = e.target;
+      const opener = tab.openerTab;
+      if (!modEnabled || !opener || tab.pinned || tabGroupId(tab) || tab.hasAttribute("zen-glance-tab") || opener.hasAttribute("zen-glance-tab")) {
+        return;
+      }
+      const id = tabGroupId(opener);
+      if (id && getCustomGroups().some(g => g.id === id)) {
+        setTabGroup(tab, id);
+      }
+    });
     // TabBrowserDiscarded / TabBrowserInserted: a tab unloaded or loaded
     // again, for the Unload button.
     for (const type of ["TabOpen", "TabClose", "TabMove", "TabPinned", "TabUnpinned", "TabSelect", "TabGrouped", "TabUngrouped", "TabBrowserDiscarded", "TabBrowserInserted"]) {
