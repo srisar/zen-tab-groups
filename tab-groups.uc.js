@@ -1377,8 +1377,74 @@
         setSections(sections);
       }
     };
+    // The custom group a header belongs to (by id), or null for a section.
+    const customIdOf = header => {
+      const key = header?.getAttribute("data-key") ?? "";
+      return key.startsWith("custom:") ? key.slice("custom:".length) : null;
+    };
+    const editGroup = fn => () => {
+      const id = customIdOf(triggerHeader());
+      const groups = getCustomGroups();
+      const i = groups.findIndex(g => g.id === id);
+      if (i >= 0 && fn(groups, i) !== false) {
+        setCustomGroups(groups);
+      }
+    };
+    // One menu item for both kinds of header.
+    const either = (forSection, forGroup) => () => (customIdOf(triggerHeader()) ? forGroup : forSection)();
     // The space whose list the header is in.
     const headerSpace = () => triggerHeader()?.parentElement?.getAttribute("zen-workspace-id") ?? null;
+    // Groups move past the groups shown in the same space (step: -1 or 1).
+    const moveGroup = step =>
+      editGroup((g, i) => {
+        const space = headerSpace();
+        let j = i + step;
+        while (g[j] && !inSpace(asSection(g[j]), space)) {
+          j += step;
+        }
+        if (!g[j]) {
+          return false;
+        }
+        [g[i], g[j]] = [g[j], g[i]];
+      });
+    const colorMenu = document.createXULElement("menu");
+    colorMenu.id = "zsg-header-color";
+    colorMenu.setAttribute("label", "Color");
+    const colorPopup = document.createXULElement("menupopup");
+    colorMenu.append(colorPopup);
+    for (const [name, hex] of GROUP_COLORS) {
+      const item = menuItem(
+        name,
+        editGroup((g, i) => {
+          g[i].color = hex;
+        })
+      );
+      item.setAttribute("type", "radio");
+      item.setAttribute("name", "zsg-group-color");
+      item.setAttribute("value", hex);
+      colorPopup.append(item);
+    }
+    // Lets go of the group's tabs (they're sorted as usual again); none close.
+    const deleteItem = menuItem("Delete group", () => {
+      const id = customIdOf(triggerHeader());
+      if (!id) {
+        return;
+      }
+      setCustomGroups(getCustomGroups().filter(g => g.id !== id));
+      const set = getCollapsed();
+      if (set.delete(`custom:${id}`)) {
+        setCollapsed(set);
+      }
+      // Tabs in other windows let go on their next layout: their group is gone.
+      gBrowser.tabs.filter(t => tabGroupId(t) === id).forEach(clearTabGroup);
+    });
+    deleteItem.id = "zsg-header-delete";
+    const removeSectionItem = menuItem("Remove section", edit((s, i) => s.splice(i, 1)));
+    const moveUpItem = menuItem("Move section up", either(edit((s, i) => i > 0 && ([s[i - 1], s[i]] = [s[i], s[i - 1]])), moveGroup(-1)));
+    const moveDownItem = menuItem(
+      "Move section down",
+      either(edit((s, i) => i < s.length - 1 && ([s[i + 1], s[i]] = [s[i], s[i + 1]])), moveGroup(1))
+    );
     const spacesSep = document.createXULElement("menuseparator");
     const onlyHereItem = menuItem(
       "Only in this space",
@@ -1403,6 +1469,27 @@
       const header = triggerHeader();
       closeAllItem.disabled = !!header?.hasAttribute("zsg-empty");
       unloadAllItem.disabled = !!header?.hasAttribute("zsg-none-loaded");
+      const groupId = customIdOf(header);
+      const kind = groupId ? "group" : "section";
+      moveUpItem.setAttribute("label", `Move ${kind} up`);
+      moveDownItem.setAttribute("label", `Move ${kind} down`);
+      closeAllItem.setAttribute("label", `Close all tabs in this ${kind}`);
+      unloadAllItem.setAttribute("label", `Unload all tabs in this ${kind}`);
+      removeSectionItem.hidden = !!groupId;
+      colorMenu.hidden = deleteItem.hidden = !groupId;
+      if (groupId) {
+        // A group always belongs to its own space.
+        onlyHereItem.hidden = everywhereItem.hidden = spacesSep.hidden = true;
+        const color = getCustomGroups().find(g => g.id === groupId)?.color;
+        for (const item of colorPopup.children) {
+          if (item.getAttribute("value") === color) {
+            item.setAttribute("checked", "true");
+          } else {
+            item.removeAttribute("checked");
+          }
+        }
+        return;
+      }
       const section = getSections().find(s => displayName(s) === header?.getAttribute("data-label"));
       const space = headerSpace();
       // With one space (or spaces off) there's nothing to choose.
@@ -1412,26 +1499,38 @@
       spacesSep.hidden = onlyHereItem.hidden && everywhereItem.hidden;
     });
     popup.append(
-      menuItem("Move section up", edit((s, i) => i > 0 && ([s[i - 1], s[i]] = [s[i], s[i - 1]]))),
-      menuItem("Move section down", edit((s, i) => i < s.length - 1 && ([s[i + 1], s[i]] = [s[i], s[i + 1]]))),
+      moveUpItem,
+      moveDownItem,
       menuItem(
         "Rename…",
-        edit((s, i) => {
-          const old = displayName(s[i]);
-          const name = promptText("Rename section", "New name:", old);
-          if (!name) {
-            return false;
-          }
-          s[i].name = name;
-          const set = getCollapsed();
-          if (set.delete(old)) {
-            set.add(name);
-            setCollapsed(set);
-          }
-          return true;
-        })
+        either(
+          edit((s, i) => {
+            const old = displayName(s[i]);
+            const name = promptText("Rename section", "New name:", old);
+            if (!name) {
+              return false;
+            }
+            s[i].name = name;
+            const set = getCollapsed();
+            if (set.delete(old)) {
+              set.add(name);
+              setCollapsed(set);
+            }
+            return true;
+          }),
+          // Folded state is kept by id, so it survives a rename as is.
+          editGroup((g, i) => {
+            const name = askGroupName("Rename group", "New name:", g[i].name, headerSpace(), g[i].id);
+            if (!name) {
+              return false;
+            }
+            g[i].name = name;
+          })
+        )
       ),
-      menuItem("Remove section", edit((s, i) => s.splice(i, 1))),
+      colorMenu,
+      removeSectionItem,
+      deleteItem,
       spacesSep,
       onlyHereItem,
       everywhereItem,
