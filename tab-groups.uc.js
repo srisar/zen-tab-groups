@@ -1651,14 +1651,23 @@
             }
             return true;
           }),
-          // Folded state is kept by id, so it survives a rename as is.
-          editGroup((g, i) => {
-            const name = askGroupName("Rename group", "New name:", g[i].name, headerSpace(), g[i].id);
+          // Folded state is kept by id, so it survives a rename as is. The
+          // name is asked first and the list read after: the prompt only
+          // blocks this window, and another may change the groups meanwhile.
+          () => {
+            const id = customIdOf(triggerHeader());
+            const old = getCustomGroups().find(g => g.id === id);
+            const name = old && askGroupName("Rename group", "New name:", old.name, headerSpace(), id);
             if (!name) {
-              return false;
+              return;
             }
-            g[i].name = name;
-          })
+            const groups = getCustomGroups();
+            const group = groups.find(g => g.id === id);
+            if (group) {
+              group.name = name;
+              setCustomGroups(groups);
+            }
+          }
         )
       ),
       colorMenu,
