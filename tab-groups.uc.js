@@ -50,6 +50,24 @@
   // box can offer it as a list).
   const PREF_MIN_TABS = "zen.sitegroups.min-tabs";
   const MAX_MIN_TABS = 10;
+  // Groups you make and fill by hand, in the normal tab list above the site
+  // sections: [{ id, name, color, space }]. Kept apart from the sections,
+  // which the settings page rewrites (and would drop these from).
+  const PREF_CUSTOM = "zen.sitegroups.custom-groups";
+  // A tab's custom group id, kept with the session so it survives restarts.
+  const TAB_GROUP_KEY = "zsg-custom-group";
+  // New custom groups take these colors in turn.
+  const GROUP_COLORS = [
+    ["Blue", "#4da3ff"],
+    ["Purple", "#a77bf3"],
+    ["Cyan", "#3fc1d0"],
+    ["Green", "#5bc06a"],
+    ["Yellow", "#e6b929"],
+    ["Orange", "#f08a3c"],
+    ["Red", "#ec5b5b"],
+    ["Pink", "#ea6fb4"],
+    ["Grey", "#9a9aa2"],
+  ];
 
   // A section is either one website ("site") or several under a name you
   // pick ("collection"). A website can only belong to one section. `spaces`
@@ -292,6 +310,79 @@
 
   const getCollapsed = () => new Set(readJSON(PREF_COLLAPSED, []));
   const setCollapsed = set => writeJSON(PREF_COLLAPSED, [...set]);
+
+  /* ---------- custom groups ---------- */
+
+  function getCustomGroups() {
+    const raw = readJSON(PREF_CUSTOM, []);
+    return (Array.isArray(raw) ? raw : [])
+      .filter(g => g && typeof g.id === "string" && g.id && String(g.name ?? "").trim())
+      .map(g => ({
+        id: g.id,
+        name: String(g.name).trim(),
+        color: /^#[0-9a-f]{6}$/i.test(g.color ?? "") ? g.color : null,
+        space: SPACE_ID.test(g.space ?? "") ? g.space : null,
+      }));
+  }
+  const setCustomGroups = groups => writeJSON(PREF_CUSTOM, groups);
+
+  // A custom group in the shape of a section, so layout, colors, headers and
+  // spaces treat both alike. A group with a space that's gone shows in all.
+  const asSection = group => ({
+    kind: "custom",
+    id: group.id,
+    name: group.name,
+    color: group.color,
+    sites: [],
+    spaces: group.space ? [group.space] : [],
+    minTabs: 1,
+  });
+  const groupsIn = (groups, space) => groups.filter(g => inSpace(asSection(g), space));
+
+  const tabGroupId = tab => SessionStore.getCustomTabValue(tab, TAB_GROUP_KEY);
+  function setTabGroup(tab, id) {
+    SessionStore.setCustomTabValue(tab, TAB_GROUP_KEY, id);
+    schedule();
+  }
+  function clearTabGroup(tab) {
+    SessionStore.deleteCustomTabValue(tab, TAB_GROUP_KEY);
+    schedule();
+  }
+  // Whether a tab is in a custom group that still exists (never with the
+  // mod switched off).
+  function inCustomGroup(tab) {
+    const id = modEnabled && tabGroupId(tab);
+    return !!id && getCustomGroups().some(g => g.id === id);
+  }
+
+  const nameTaken = (name, space, exceptId = null) =>
+    groupsIn(getCustomGroups(), space).some(g => g.id !== exceptId && g.name.toLowerCase() === name.toLowerCase());
+
+  // Asks for a group name until it's free in the space; null if cancelled.
+  function askGroupName(title, message, initial, space, exceptId = null) {
+    for (;;) {
+      const name = promptText(title, message, initial);
+      if (!name || !nameTaken(name, space, exceptId)) {
+        return name || null;
+      }
+      message = `“${name}” is already a group in this space. Pick another name:`;
+      initial = name;
+    }
+  }
+
+  // Makes a group in the space, named by the user. Returns its id, or null.
+  function newGroup(space) {
+    const name = askGroupName("New group", "Name for the new group:", "", space);
+    if (!name) {
+      return null;
+    }
+    const groups = getCustomGroups();
+    const id = Services.uuid.generateUUID().toString();
+    const color = GROUP_COLORS[groups.length % GROUP_COLORS.length][1];
+    groups.push({ id, name, color, space: SPACE_ID.test(space ?? "") ? space : null });
+    setCustomGroups(groups);
+    return id;
+  }
 
   // Earlier versions kept groups in numbered slots (zen.sitegroups.<n>.name/sites).
   function migrateOldPrefs() {
@@ -818,15 +909,30 @@
   }
 
   // Lays out one space's tabs. Returns the tabs it put in a section.
-  function layoutSection(container, sections, opts) {
+  // `groups`: the custom groups, or null to leave tabs' groups alone (mod off).
+  function layoutSection(container, siteSections, groups, opts) {
     const spaceId = container.getAttribute("zen-workspace-id");
     const content = [...container.children].filter(isContent);
+    // This space's custom groups come first, above the site sections.
+    const custom = groupsIn(groups ?? [], spaceId);
+    const sections = [...custom.map(asSection), ...siteSections];
     let grouped = [];
     for (const el of content) {
       if (el.localName !== "tab") {
         continue;
       }
-      const si = sectionIndexForHost(tabHost(el), sections, spaceId);
+      // A tab in a custom group stays there, whatever its site.
+      const id = groups ? tabGroupId(el) : "";
+      let si = id ? custom.findIndex(g => g.id === id) : -1;
+      if (id && si < 0) {
+        // Its group was deleted, or the tab moved to another space: it
+        // leaves the group. (Not relaid out: this layout already sorts it.)
+        SessionStore.deleteCustomTabValue(el, TAB_GROUP_KEY);
+      }
+      if (si < 0) {
+        const i = sectionIndexForHost(tabHost(el), siteSections, spaceId);
+        si = i < 0 ? -1 : custom.length + i;
+      }
       if (si >= 0) {
         grouped.push({ tab: el, si });
       } else {
@@ -897,7 +1003,8 @@
     let last = null; // last element of the sections area so far
     sections.forEach((section, si) => {
       const tabs = grouped.filter(g => g.si === si).map(g => g.tab);
-      if ((!tabs.length && !opts.keepEmpty) || !inSpace(section, spaceId)) {
+      // A custom group keeps its header while empty: it lasts until deleted.
+      if ((!tabs.length && !opts.keepEmpty && section.kind !== "custom") || !inSpace(section, spaceId)) {
         return;
       }
       const key = headerKey(section);
@@ -997,6 +1104,7 @@
     try {
       // Switched off in Settings: an empty list strips everything back out.
       const sections = modEnabled ? getSections() : [];
+      const groups = modEnabled ? getCustomGroups() : null;
       const opts = {
         collapsed: getCollapsed(),
         keepEmpty: Services.prefs.getBoolPref(PREF_KEEP_EMPTY, false),
@@ -1022,7 +1130,7 @@
       knownSpaces = new Set(getSpaces().map(s => s.id));
       const grouped = new Set();
       for (const container of document.querySelectorAll(".zen-workspace-normal-tabs-section")) {
-        layoutSection(container, sections, opts).forEach(tab => grouped.add(tab));
+        layoutSection(container, sections, groups, opts).forEach(tab => grouped.add(tab));
       }
       // Tabs that left a space's list (pinned, put in a folder or a split
       // view) keep nothing of their section, so a folded one isn't hidden.
@@ -1153,28 +1261,73 @@
     const collectionPopup = document.createXULElement("menupopup");
     collectionMenu.append(collectionPopup);
     const removeItem = menuItem("Remove this site from its section", () => contextHost && removeSite(contextHost));
+    // Custom groups: put the tab (or all selected tabs) in one, or take it out.
+    // The tabs are noted when the menu opens; the name prompt outlasts it.
+    let menuTabs = [];
+    let currentGroup = null;
+    const groupMenu = document.createXULElement("menu");
+    groupMenu.setAttribute("label", "Add to group");
+    const groupPopup = document.createXULElement("menupopup");
+    groupMenu.append(groupPopup);
+    const leaveItem = menuItem("Remove from its group", () => {
+      menuTabs.filter(t => tabGroupId(t) === currentGroup?.id).forEach(clearTabGroup);
+    });
     const settingsItem = menuItem("Tab Groups settings…", openSettings);
-    const all = [sep, ownItem, collectionMenu, removeItem, settingsItem];
+    const siteItems = [ownItem, collectionMenu, removeItem, settingsItem];
     // Ids let other mods (Zen Context Menu) recognize the items, whose labels
     // change with the tab's site.
     sep.id = "context_zsg-separator";
     ownItem.id = "context_zsg-own-section";
     collectionMenu.id = "context_zsg-add-to-collection";
     removeItem.id = "context_zsg-remove-site";
+    groupMenu.id = "context_zsg-add-to-group";
+    leaveItem.id = "context_zsg-remove-from-group";
     settingsItem.id = "context_zsg-settings";
-    tabMenu.append(...all);
+    tabMenu.append(sep, ownItem, collectionMenu, removeItem, groupMenu, leaveItem, settingsItem);
+
+    // The groups the tab can go in (all but its own), then "New group…".
+    function fillGroupItems(tab) {
+      groupMenu.hidden = leaveItem.hidden = !tab;
+      if (!tab) {
+        return;
+      }
+      const tabs = (tab.multiselected ? gBrowser.selectedTabs : [tab]).filter(t => !t.pinned);
+      const space = tab.getAttribute("zen-workspace-id") || null;
+      const groups = getCustomGroups();
+      menuTabs = tabs;
+      currentGroup = groups.find(g => g.id === tabGroupId(tab)) ?? null;
+      leaveItem.hidden = !currentGroup;
+      if (currentGroup) {
+        leaveItem.setAttribute("label", `Remove from “${currentGroup.name}”`);
+      }
+      const others = groupsIn(groups, space).filter(g => g !== currentGroup);
+      groupPopup.replaceChildren(
+        ...others.map(g => menuItem(g.name, () => tabs.forEach(t => setTabGroup(t, g.id)))),
+        ...(others.length ? [document.createXULElement("menuseparator")] : []),
+        menuItem("New group…", () => {
+          const id = newGroup(space);
+          if (id) {
+            tabs.forEach(t => setTabGroup(t, id));
+          }
+        })
+      );
+    }
 
     tabMenu.addEventListener("popupshowing", e => {
       if (e.target !== tabMenu) {
         return;
       }
       const tab = TabContextMenu.contextTab;
-      // Switched off in the options: none of the items, settings included
-      // (the header menu and Sine's gear button still open it).
+      const usable = tab && !tab.pinned && modEnabled;
+      // Custom groups are always offered: the menu is the only way in.
+      fillGroupItems(usable ? tab : null);
+      // Switched off in the options: none of the site items, settings
+      // included (the header menu and Sine's gear button still open it).
       const showItems = Services.prefs.getBoolPref(PREF_TAB_MENU, true);
-      const host = tab && !tab.pinned && modEnabled && showItems ? tabHost(tab) : null;
+      const host = usable && showItems ? tabHost(tab) : null;
       contextHost = host;
-      all.forEach(el => (el.hidden = !host));
+      siteItems.forEach(el => (el.hidden = !host));
+      sep.hidden = !host && groupMenu.hidden;
       if (!host) {
         return;
       }
@@ -1184,7 +1337,9 @@
       ownItem.hidden = collectionMenu.hidden = si >= 0;
       removeItem.hidden = si < 0;
       if (si >= 0) {
-        removeItem.setAttribute("label", `Remove from “${displayName(sections[si])}”`);
+        // Next to "Remove from “olai”", say it's the site that goes.
+        const name = displayName(sections[si]);
+        removeItem.setAttribute("label", currentGroup ? `Remove ${site} from “${name}”` : `Remove from “${name}”`);
         return;
       }
       ownItem.setAttribute("label", `Give ${site} its own section`);
