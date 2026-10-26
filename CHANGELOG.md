@@ -6,6 +6,14 @@ tells Sine an update is available.
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-10-26
+
+### Fixed
+
+- A blank new tab opened with a middle-click or Ctrl-click on **+** no
+  longer joins the custom group of the tab you were on. Firefox counts such
+  a tab as opened from the current one, but it isn't a link from it.
+
 ## [1.7.0] - 2026-10-26
 
 ### Added
