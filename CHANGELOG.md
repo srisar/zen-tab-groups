@@ -6,6 +6,14 @@ tells Sine an update is available.
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-10-26
+
+### Changed
+
+- The header button's icons: a bin for **Clear** and a moon for **Unload**
+  (putting the tabs to sleep), instead of a cross and the bare minus sign
+  Zen uses on folders.
+
 ## [1.8.0] - 2026-10-26
 
 ### Added

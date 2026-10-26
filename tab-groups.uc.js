@@ -146,15 +146,15 @@
       opacity: 0.6;
     }
     .zsg-clear:hover { opacity: 1; }
-    /* As an icon: Zen's own, as on a folder (unload) or a tab (close). */
+    /* As an icon, from Zen's set: a bin to close, a moon to unload (put to sleep). */
     .zsg-header[zsg-button-icon] .zsg-clear {
       width: 16px;
       height: 16px;
       background-color: currentColor;
-      mask: url("chrome://browser/skin/zen-icons/close.svg") center / 14px 14px no-repeat;
+      mask: url("chrome://browser/skin/zen-icons/trash.svg") center / 14px 14px no-repeat;
     }
     .zsg-header[zsg-button-icon][zsg-button="unload"] .zsg-clear {
-      mask-image: url("chrome://browser/skin/zen-icons/unpin.svg");
+      mask-image: url("chrome://browser/skin/zen-icons/moon-stars.svg");
     }
     .zsg-header:not([zsg-empty]):hover .zsg-clear { display: flex; }
     .zsg-rest { min-height: 12px; gap: 6px; }

@@ -445,9 +445,9 @@ div.option { cursor: default; }
   height: 16px;
   flex: none;
   background-color: currentColor;
-  mask: url("chrome://browser/skin/zen-icons/close.svg") center / 14px 14px no-repeat;
+  mask: url("chrome://browser/skin/zen-icons/trash.svg") center / 14px 14px no-repeat;
 }
-.p-header .action.icon.unload { mask-image: url("chrome://browser/skin/zen-icons/unpin.svg"); }
+.p-header .action.icon.unload { mask-image: url("chrome://browser/skin/zen-icons/moon-stars.svg"); }
 .preview.no-header-line .p-header .line { visibility: hidden; }
 .preview.bg-header .p-header:not(.empty) {
   background: color-mix(in srgb, var(--c, currentColor) var(--hpct), transparent);
