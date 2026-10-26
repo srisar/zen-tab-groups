@@ -6,6 +6,25 @@ tells Sine an update is available.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-10-26
+
+### Added
+
+- **Custom groups**: your own named groups in the tab list, for tabs that
+  belong together by what you're working on rather than by site. Right-click
+  a tab → **Add to group** to put it (or all selected tabs) in one, or make
+  a new one. They sit above the site sections and win over them, and they
+  last, tabs and all, through restarts until you delete them.
+- Links opened from a custom group's tab join the group.
+- A custom group's header menu: move, rename, **Color** and **Delete
+  group** (which closes none of its tabs).
+- Zen's **Clear** button leaves custom groups' tabs open.
+
+### Changed
+
+- The "Items in the tab menu" option no longer hides **Add to group**, the
+  only way to use custom groups.
+
 ## [1.5.1] - 2026-10-21
 
 ### Fixed
