@@ -6,6 +6,14 @@ tells Sine an update is available.
 
 ## [Unreleased]
 
+## [1.7.2] - 2026-10-26
+
+### Fixed
+
+- Renaming a custom group no longer undoes group changes made in another
+  window while the name box was open (a group made there could vanish, and
+  its tabs leave it).
+
 ## [1.7.1] - 2026-10-26
 
 ### Fixed
