@@ -6,6 +6,13 @@ tells Sine an update is available.
 
 ## [Unreleased]
 
+## [1.7.3] - 2026-10-26
+
+### Fixed
+
+- Renaming a section from its header no longer undoes section changes made
+  in another window while the name box was open.
+
 ## [1.7.2] - 2026-10-26
 
 ### Fixed

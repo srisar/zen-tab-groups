@@ -1637,20 +1637,27 @@
       menuItem(
         "Rename…",
         either(
-          edit((s, i) => {
-            const old = displayName(s[i]);
-            const name = promptText("Rename section", "New name:", old);
+          // Like a group's: the name first, then the list read and written,
+          // finding the section again by its old name (sections have no id).
+          () => {
+            const old = triggerHeader()?.getAttribute("data-label");
+            const name = getSections().some(s => displayName(s) === old) && promptText("Rename section", "New name:", old);
             if (!name) {
-              return false;
+              return;
             }
-            s[i].name = name;
+            const sections = getSections();
+            const section = sections.find(s => displayName(s) === old);
+            if (!section) {
+              return;
+            }
+            section.name = name;
+            setSections(sections);
             const set = getCollapsed();
             if (set.delete(old)) {
               set.add(name);
               setCollapsed(set);
             }
-            return true;
-          }),
+          },
           // Folded state is kept by id, so it survives a rename as is. The
           // name is asked first and the list read after: the prompt only
           // blocks this window, and another may change the groups meanwhile.
