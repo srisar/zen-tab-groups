@@ -1714,6 +1714,27 @@
   // a folder's. It works out what to close itself, then closes it all with
   // one gBrowser.removeTabs call before returning, so that call is filtered
   // just while it runs. If Zen changes, Clear is left as Zen made it.
+  // A middle- or Ctrl-click on + (or the new tab command) opens a blank tab
+  // "related to" the selected one, so it gets that tab as its opener. It's
+  // not a link from it, so while that command runs, new tabs join no group.
+  // The tab is made before the command returns.
+  let openingBlankTab = 0;
+  function hookNewTabCommand() {
+    const original = window.BrowserCommands?.openTab;
+    if (typeof original !== "function") {
+      console.error("[Zen Tab Groups] couldn't hook the new tab command");
+      return;
+    }
+    BrowserCommands.openTab = function (...args) {
+      openingBlankTab++;
+      try {
+        return original.apply(this, args);
+      } finally {
+        openingBlankTab--;
+      }
+    };
+  }
+
   function hookZenClear() {
     const original = window.gZenWorkspaces?.closeAllUnpinnedTabs;
     if (typeof original !== "function") {
@@ -1746,6 +1767,7 @@
     );
     setupMenus();
     hookZenClear();
+    hookNewTabCommand();
     setupDrag();
 
     // Used by the settings page.
@@ -1763,7 +1785,7 @@
     tabContainer.addEventListener("TabOpen", e => {
       const tab = e.target;
       const opener = tab.openerTab;
-      if (!modEnabled || !opener || tab.pinned || tabGroupId(tab) || tab.hasAttribute("zen-glance-tab") || opener.hasAttribute("zen-glance-tab")) {
+      if (!modEnabled || !opener || openingBlankTab || tab.pinned || tabGroupId(tab) || tab.hasAttribute("zen-glance-tab") || opener.hasAttribute("zen-glance-tab")) {
         return;
       }
       const id = tabGroupId(opener);
