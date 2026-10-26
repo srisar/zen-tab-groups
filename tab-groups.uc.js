@@ -1577,6 +1577,32 @@
     );
   }
 
+  // Zen's Clear (close unpinned tabs) keeps custom groups' tabs, like it keeps
+  // a folder's. It works out what to close itself, then closes it all with
+  // one gBrowser.removeTabs call before returning, so that call is filtered
+  // just while it runs. If Zen changes, Clear is left as Zen made it.
+  function hookZenClear() {
+    const original = window.gZenWorkspaces?.closeAllUnpinnedTabs;
+    if (typeof original !== "function") {
+      console.error("[Zen Tab Groups] couldn't hook Zen's Clear button");
+      return;
+    }
+    gZenWorkspaces.closeAllUnpinnedTabs = function (...args) {
+      const removeTabs = gBrowser.removeTabs;
+      gBrowser.removeTabs = (tabs, options) =>
+        removeTabs.call(
+          gBrowser,
+          tabs.filter(t => !inCustomGroup(t)),
+          options
+        );
+      try {
+        return original.apply(this, args);
+      } finally {
+        gBrowser.removeTabs = removeTabs;
+      }
+    };
+  }
+
   /* ---------- wiring ---------- */
 
   function init() {
@@ -1586,6 +1612,7 @@
       windowUtils.AUTHOR_SHEET
     );
     setupMenus();
+    hookZenClear();
 
     // Used by the settings page.
     window.ZenSiteGroups = { getSections, setSections, defaultSections, normalizeSite, defaultName, displayName, iconColor, getSpaces };
