@@ -6,6 +6,15 @@ tells Sine an update is available.
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-10-26
+
+### Added
+
+- **Drag tabs into custom groups**: drop a tab on a group's header (it goes
+  first) or between its tabs, and it joins the group, along with any other
+  selected tabs. The group lights up while you drag over it. Drag a tab out
+  of its group to take it out.
+
 ## [1.6.0] - 2026-10-26
 
 ### Added

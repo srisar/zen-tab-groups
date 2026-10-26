@@ -60,8 +60,8 @@ A website can only be in one section. The most specific address wins, so `music.
 For tabs that belong together by what you're working on rather than by site, like everything for one project.
 
 - **Make one:** right-click a tab → **Add to group** → **New group…**, and name it. Select several tabs first (Ctrl-click or Shift-click) to put them all in at once.
-- **Add tabs:** right-click a tab → **Add to group** → pick the group. Links you open from a group's tabs join it on their own; a blank new tab doesn't.
-- **Take a tab out:** right-click it → **Remove from "olai"**. It goes back to its site's section, or to your other tabs.
+- **Add tabs:** drag a tab onto the group's header or between its tabs (the group lights up), or right-click it → **Add to group** → pick the group. Links you open from a group's tabs join it on their own; a blank new tab doesn't.
+- **Take a tab out:** drag it out of the group, or right-click it → **Remove from "olai"**. It goes back to its site's section, or to your other tabs.
 - **Right-click a group's header** to move it, rename it, change its color, or **Delete group**. Deleting a group closes none of its tabs: they're sorted as usual again.
 
 Custom groups sit above your site sections and win over them: a GitHub tab in "olai" stays in "olai". Each group belongs to the space you made it in. Zen's **Clear** button leaves their tabs open, like a folder's.

@@ -232,6 +232,17 @@
     }
 
     tab[zsg-collapsed]:not([selected], [multiselected]) { display: none !important; }
+
+    /* The custom group a dragged tab would join. */
+    .zsg-header[zsg-drop-target] {
+      background: color-mix(in srgb, var(--zsg-color, currentColor) 22%, transparent) !important;
+      outline: 2px solid color-mix(in srgb, var(--zsg-color, currentColor) 70%, transparent);
+      outline-offset: -2px;
+    }
+    /* :not(#…) only lifts it above the background options' rules. */
+    tab[zsg-drop-target]:not(#zsg-none) > .tab-stack > .tab-background {
+      background-color: color-mix(in srgb, var(--zsg-color, currentColor) 18%, transparent) !important;
+    }
   `;
 
   /* ---------- prefs ---------- */
@@ -954,7 +965,9 @@
       ungroup(tab);
       return false;
     });
-    grouped.sort((a, b) => a.si - b.si); // stable: keeps order within a section
+    // Stable: keeps order within a section, but tabs dropped on a group's
+    // header go first in it.
+    grouped.sort((a, b) => a.si - b.si || droppedFirst.has(b.tab) - droppedFirst.has(a.tab));
     // Each section's color, and text colors that read on its backgrounds.
     const text = parseColor(getComputedStyle(container).color);
     const looks = new Map();
@@ -1134,6 +1147,7 @@
       for (const container of document.querySelectorAll(".zen-workspace-normal-tabs-section")) {
         layoutSection(container, sections, groups, opts).forEach(tab => grouped.add(tab));
       }
+      droppedFirst.clear(); // placed: from now on they're ordinary tabs
       // Tabs that left a space's list (pinned, put in a folder or a split
       // view) keep nothing of their section, so a folded one isn't hidden.
       for (const tab of gBrowser.tabs) {
@@ -1144,6 +1158,123 @@
     } catch (ex) {
       console.error("[Zen Tab Groups]", ex);
     }
+  }
+
+  /* ---------- dragging tabs into and out of custom groups ---------- */
+
+  const TAB_DROP_TYPE = "application/x-moz-tabbrowser-tab";
+  // Tabs dropped on a group's header, for the next layout to put first.
+  const droppedFirst = new Set();
+
+  // Where tabs dragged in this window would land, judged from the pointer
+  // (Zen decides where they go in the list; this decides their group):
+  // - { key, header }: a custom group, over its header or one of its tabs
+  // - "loose": elsewhere in the normal list (sections, other tabs, divider,
+  //   the space below): tabs leave their group
+  // - null: anywhere else (pinned tabs, split views, outside the sidebar):
+  //   Zen's business, groups are left as they are
+  function dropTargetAt(event, moving) {
+    const space = event.target?.closest?.("zen-workspace");
+    if (!space || event.target.closest(".zen-workspace-pinned-tabs-section")) {
+      return null;
+    }
+    const list = space.querySelector(".zen-workspace-normal-tabs-section");
+    let best = null;
+    let bestDist = Infinity;
+    let bottom = -Infinity;
+    for (const el of list?.children ?? []) {
+      if (moving.includes(el) || !(isContent(el) || isOurs(el))) {
+        continue;
+      }
+      // Other tabs make room for the dragged ones, so their boxes as drawn
+      // are what the user sees. Folded tabs have none.
+      const r = el.getBoundingClientRect();
+      if (!r.height) {
+        continue;
+      }
+      bottom = Math.max(bottom, r.bottom);
+      const dist = Math.max(r.top - event.clientY, event.clientY - r.bottom, 0);
+      if (dist < bestDist) {
+        best = el;
+        bestDist = dist;
+      }
+    }
+    if (!best || event.clientY > bottom) {
+      return "loose";
+    }
+    if (CONTAINER_TAGS.has(best.localName)) {
+      return null;
+    }
+    const header = best.classList.contains("zsg-header");
+    const key = header ? best.getAttribute("data-key") : best.getAttribute("zsg-group");
+    return key?.startsWith("custom:") ? { key, header } : "loose";
+  }
+
+  // The tab being dragged and the tabs moving with it, if it's a tab drag
+  // from this window.
+  function draggedTabs(event) {
+    const dragged = event.dataTransfer?.mozGetDataAt(TAB_DROP_TYPE, 0);
+    if (!modEnabled || dragged?.localName !== "tab" || dragged.documentGlobal !== window) {
+      return null;
+    }
+    return (dragged._dragData?.movingTabs ?? [dragged]).filter(t => t.localName === "tab");
+  }
+
+  let litKey = null;
+  function lightUp(key) {
+    if (key === litKey) {
+      return;
+    }
+    litKey = key;
+    for (const el of document.querySelectorAll("[zsg-drop-target]")) {
+      el.removeAttribute("zsg-drop-target");
+    }
+    if (key) {
+      for (const el of document.querySelectorAll(".zsg-header[data-key], tab[zsg-group]")) {
+        if ((el.getAttribute("data-key") ?? el.getAttribute("zsg-group")) === key) {
+          el.setAttribute("zsg-drop-target", "");
+        }
+      }
+    }
+  }
+
+  function setupDrag() {
+    window.addEventListener(
+      "dragover",
+      e => {
+        const tabs = draggedTabs(e);
+        const target = tabs && dropTargetAt(e, tabs);
+        lightUp(target?.key ?? null);
+      },
+      true
+    );
+    // Before Zen's own drop: the group is set now, and the layout that
+    // follows the move (once the drag is over) puts the tabs in it.
+    window.addEventListener(
+      "drop",
+      e => {
+        lightUp(null);
+        const tabs = draggedTabs(e);
+        // Ctrl-drag copies: the dragged tabs stay where they were.
+        if (!tabs || e.dataTransfer.dropEffect === "copy") {
+          return;
+        }
+        const target = dropTargetAt(e, tabs);
+        if (target === "loose") {
+          tabs.filter(inCustomGroup).forEach(clearTabGroup);
+        } else if (target) {
+          const id = target.key.slice("custom:".length);
+          for (const tab of tabs) {
+            setTabGroup(tab, id);
+            if (target.header) {
+              droppedFirst.add(tab);
+            }
+          }
+        }
+      },
+      true
+    );
+    window.addEventListener("dragend", () => lightUp(null), true);
   }
 
   /* ---------- actions ---------- */
@@ -1615,6 +1746,7 @@
     );
     setupMenus();
     hookZenClear();
+    setupDrag();
 
     // Used by the settings page.
     window.ZenSiteGroups = { getSections, setSections, defaultSections, normalizeSite, defaultName, displayName, iconColor, getSpaces };
