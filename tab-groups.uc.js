@@ -1759,16 +1759,23 @@
     }
     gZenWorkspaces.closeAllUnpinnedTabs = function (...args) {
       const removeTabs = gBrowser.removeTabs;
-      gBrowser.removeTabs = (tabs, options) =>
-        removeTabs.call(
-          gBrowser,
-          tabs.filter(t => !inCustomGroup(t)),
-          options
-        );
+      const showToast = gZenUIManager.showToast;
+      let closedAny = false;
+      gBrowser.removeTabs = (tabs, options) => {
+        const closing = tabs.filter(t => !inCustomGroup(t));
+        closedAny ||= closing.length > 0;
+        return removeTabs.call(gBrowser, closing, options);
+      };
+      // Zen then says it closed tabs; not when the groups kept them all.
+      gZenUIManager.showToast = (id, ...rest) =>
+        id === "zen-workspaces-close-all-unpinned-tabs-toast" && !closedAny
+          ? undefined
+          : showToast.call(gZenUIManager, id, ...rest);
       try {
         return original.apply(this, args);
       } finally {
         gBrowser.removeTabs = removeTabs;
+        gZenUIManager.showToast = showToast;
       }
     };
   }

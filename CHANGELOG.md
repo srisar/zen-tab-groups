@@ -6,6 +6,13 @@ tells Sine an update is available.
 
 ## [Unreleased]
 
+## [1.7.4] - 2026-10-26
+
+### Fixed
+
+- Zen's **Clear** no longer says it closed tabs when every tab it would
+  have closed was kept by a custom group.
+
 ## [1.7.3] - 2026-10-26
 
 ### Fixed
