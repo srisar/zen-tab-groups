@@ -29,6 +29,8 @@
   const PREF_TAB_COUNT = "zen.sitegroups.tab-count"; // "folded" | "always" | "never"
   const PREF_HEADER_LINE = "zen.sitegroups.header-line";
   const PREF_HEADER_BUTTON = "zen.sitegroups.header-button"; // "clear" | "unload" | "none"
+  // That button as Zen's icon (like a folder's) or as a word.
+  const PREF_BUTTON_STYLE = "zen.sitegroups.header-button-style"; // "icon" | "text"
   const PREF_INDENT = "zen.sitegroups.indent-tabs";
   const PREF_GROUP_LINE = "zen.sitegroups.group-line";
   const PREF_BACKGROUND = "zen.sitegroups.background"; // "none" | "header" | "tabs" | "both" | "group"
@@ -144,6 +146,16 @@
       opacity: 0.6;
     }
     .zsg-clear:hover { opacity: 1; }
+    /* As an icon: Zen's own, as on a folder (unload) or a tab (close). */
+    .zsg-header[zsg-button-icon] .zsg-clear {
+      width: 16px;
+      height: 16px;
+      background-color: currentColor;
+      mask: url("chrome://browser/skin/zen-icons/close.svg") center / 14px 14px no-repeat;
+    }
+    .zsg-header[zsg-button-icon][zsg-button="unload"] .zsg-clear {
+      mask-image: url("chrome://browser/skin/zen-icons/unpin.svg");
+    }
     .zsg-header:not([zsg-empty]):hover .zsg-clear { display: flex; }
     .zsg-rest { min-height: 12px; gap: 6px; }
     .zsg-rest[zsg-no-line] .zsg-line { visibility: hidden; }
@@ -902,8 +914,10 @@
     header.setAttribute("zsg-button", opts.button);
     header.toggleAttribute("zsg-none-loaded", !tabs.some(isLoaded));
     const [text, tooltip] = BUTTONS[opts.button] ?? BUTTONS.clear;
+    const icon = opts.buttonStyle === "icon";
+    header.toggleAttribute("zsg-button-icon", icon);
     const button = header.querySelector(".zsg-clear");
-    button.setAttribute("value", text);
+    button.setAttribute("value", icon ? "" : text);
     button.setAttribute("tooltiptext", tooltip);
     header.toggleAttribute("zsg-colored", !!look.color);
     setColor(header, look.color);
@@ -1129,6 +1143,7 @@
         tabCount: choice(PREF_TAB_COUNT, "folded", ["folded", "always", "never"]),
         headerLine: Services.prefs.getBoolPref(PREF_HEADER_LINE, true),
         button: choice(PREF_HEADER_BUTTON, "clear", ["clear", "unload", "none"]),
+        buttonStyle: choice(PREF_BUTTON_STYLE, "icon", ["icon", "text"]),
         indent: Services.prefs.getBoolPref(PREF_INDENT, false),
         groupLine: Services.prefs.getBoolPref(PREF_GROUP_LINE, false),
         background: choice(PREF_BACKGROUND, "none", ["none", "header", "tabs", "both", "group"]),

@@ -956,6 +956,8 @@ function renderPreview() {
   const arrow = prefs.getString("zen.sitegroups.chevron-position", "right");
   const tabCount = prefs.getString("zen.sitegroups.tab-count", "folded");
   const button = prefs.getString("zen.sitegroups.header-button", "clear");
+  // Zen's icons only load inside Zen; elsewhere the preview shows the word.
+  const buttonIcon = inZen && prefs.getString("zen.sitegroups.header-button-style", "icon") === "icon";
   const background = prefs.getString("zen.sitegroups.background", "none");
   const strength = prefs.getString("zen.sitegroups.background-strength", "10");
   const single = prefs.getString("zen.sitegroups.color-mode", "section") === "single";
@@ -1001,7 +1003,11 @@ function renderPreview() {
         h("span", { class: "label" }, displayName(section)),
         tabCount === "always" && sites.length ? h("span", { class: "count" }, String(sites.length)) : null,
         h("span", { class: "line" }),
-        button !== "none" && sites.length ? h("span", { class: "action" }, button === "unload" ? "Unload" : "Clear") : null
+        button !== "none" && sites.length
+          ? buttonIcon
+            ? h("span", { class: `action icon ${button}`, title: button === "unload" ? "Unload" : "Clear" })
+            : h("span", { class: "action" }, button === "unload" ? "Unload" : "Clear")
+          : null
       )
     );
     if (sites.length) {
