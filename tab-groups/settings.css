@@ -440,6 +440,14 @@ div.option { cursor: default; }
 .p-header .count { opacity: 0.45; font-weight: 500; }
 .p-header .action { display: none; font-weight: 500; opacity: 0.6; }
 .p-header:not(.empty):hover .action { display: block; }
+.p-header .action.icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  background-color: currentColor;
+  mask: url("chrome://browser/skin/zen-icons/close.svg") center / 14px 14px no-repeat;
+}
+.p-header .action.icon.unload { mask-image: url("chrome://browser/skin/zen-icons/unpin.svg"); }
 .preview.no-header-line .p-header .line { visibility: hidden; }
 .preview.bg-header .p-header:not(.empty) {
   background: color-mix(in srgb, var(--c, currentColor) var(--hpct), transparent);

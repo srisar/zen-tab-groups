@@ -6,6 +6,14 @@ tells Sine an update is available.
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-10-26
+
+### Added
+
+- **Button style** option: the header's Clear / Unload button as Zen's own
+  icon (like a folder's), now the default, or as the word as before. On the
+  settings page, with its preview, and in Sine's options.
+
 ## [1.7.4] - 2026-10-26
 
 ### Fixed
