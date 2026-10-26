@@ -173,7 +173,10 @@ A group belongs to the space it was made in and shows only there. Its
 submenu entry only appears for tabs in that space.
 
 If a group's tab is moved to another space, it leaves the group and is
-sorted normally there. *(Our call.)*
+sorted normally there. It keeps its membership out of sight, though, and
+rejoins if moved back. While Zen starts up, tabs can pass through other
+spaces' lists, so forgetting there would wipe groups. Only deleting the
+group forgets it. *(Our call; changed after review.)*
 
 If a group's space no longer exists (deleted, or spaces turned off), the
 group shows in every space, the way site sections whose spaces are gone
@@ -252,8 +255,9 @@ Checked by hand in Zen with Sine:
 6. Remove one tab from olai. It returns to its site section or the normal
    list. Then delete olai. Its remaining tabs go back to normal sorting and
    none close.
-7. Rename a folded group. It stays folded. Make a group with the same name
-   as a site section: it's refused.
+7. Rename a folded group. It stays folded. Make a second group with the
+   same name as a group in the same space: it's refused. A group named like
+   a site section is allowed and gets its own header.
 8. Open the settings page, change an option and save. Custom groups are
    untouched.
 9. In a second space, the first space's groups don't appear and aren't

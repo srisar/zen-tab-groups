@@ -348,11 +348,11 @@
     SessionStore.deleteCustomTabValue(tab, TAB_GROUP_KEY);
     schedule();
   }
-  // Whether a tab is in a custom group that still exists (never with the
-  // mod switched off).
+  // Whether a tab is in a custom group of its space (never with the mod
+  // switched off).
   function inCustomGroup(tab) {
     const id = modEnabled && tabGroupId(tab);
-    return !!id && getCustomGroups().some(g => g.id === id);
+    return !!id && groupsIn(getCustomGroups(), tab.getAttribute("zen-workspace-id")).some(g => g.id === id);
   }
 
   const nameTaken = (name, space, exceptId = null) =>
@@ -924,9 +924,11 @@
       // A tab in a custom group stays there, whatever its site.
       const id = groups ? tabGroupId(el) : "";
       let si = id ? custom.findIndex(g => g.id === id) : -1;
-      if (id && si < 0) {
-        // Its group was deleted, or the tab moved to another space: it
-        // leaves the group. (Not relaid out: this layout already sorts it.)
+      // Its group was deleted: it leaves it for good. (Not relaid out: this
+      // layout already sorts it.) A group of another space only isn't laid
+      // out here: tabs can pass through other lists while Zen starts up, so
+      // that's no reason to forget their group.
+      if (id && si < 0 && !groups.some(g => g.id === id)) {
         SessionStore.deleteCustomTabValue(el, TAB_GROUP_KEY);
       }
       if (si < 0) {
@@ -1295,7 +1297,7 @@
       const space = tab.getAttribute("zen-workspace-id") || null;
       const groups = getCustomGroups();
       menuTabs = tabs;
-      currentGroup = groups.find(g => g.id === tabGroupId(tab)) ?? null;
+      currentGroup = groupsIn(groups, space).find(g => g.id === tabGroupId(tab)) ?? null;
       leaveItem.hidden = !currentGroup;
       if (currentGroup) {
         leaveItem.setAttribute("label", `Remove from “${currentGroup.name}”`);
